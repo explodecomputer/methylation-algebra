@@ -168,16 +168,19 @@ summary(mis2)
 z <- z[, mis2 < 0.75]
 z <- apply(z, 2, function(x) {x[is.na(x)] <- mean(x, na.rm=TRUE); return(x) })
 
-library(LSAfun)
 
 za <- abs(z)
-zl <- lsa(z)
+
 
 zs <- t(apply(z,1,scale))
 dim(zs)
+
+library(LSAfun)
+library(lsa)
+zl <- lsa(z)
+
 Cosine("Coronary heart disease", "Body mass index", tvectors=z)
 Cosine("Age at menarche", "Body mass index", tvectors=z)
-
 
 
 get_cosine <- function(v1, v2, mat)
@@ -273,3 +276,101 @@ for(i in 1:nrow(z))
 
 heatmap(cosall)
 
+library(ppcor)
+
+r <- abs(cor(t(z)))
+
+r[1:10,1:10]
+m <- heatmap(r)
+
+library(ggplot2)
+library(tidyverse)
+rd <- as.data.frame(r)
+rd$trait <- rownames(rd)
+rl <- gather(rd, key=trait1, value=value, -trait)
+
+rl$trait <- as.factor(rl$trait)
+rl$trait1 <- as.factor(rl$trait1)
+rl$trait <- factor(rl$trait, levels=rownames(r)[m$rowInd])
+rl$trait1 <- factor(rl$trait1, levels=rownames(r)[m$rowInd])
+
+class(m)
+names(m)
+ggplot(rl, aes(x=trait, y=trait1)) +
+geom_tile(aes(fill=value)) +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+
+
+addition_cors <- function(v1, v2, mat)
+{
+	i1 <- which(rownames(mat) == v1)
+	i2 <- which(rownames(mat) == v2)
+	v1 <- mat[i1,]
+	v2 <- mat[i2,]
+
+	r <- cor(v1 + v2, t(mat))
+	r[c(i1,i2)] <- NA
+	names(r) <- rownames(mat)
+	return(t(r))
+}
+
+res <- array(0, c(nrow(z), nrow(z), nrow(z)))
+for(i in 1:nrow(z))
+{
+	for(j in 1:i)
+	{
+		message(i, ", ", j)
+		res[i,j,] <- addition_cors(rownames(z)[i], rownames(z)[j], z)
+	}
+}
+
+
+algebra_cors <- function(n1, n2, mat, thresh)
+{
+	i1 <- which(rownames(mat) == n1)
+	i2 <- which(rownames(mat) == n2)
+	v1 <- mat[i1,]
+	v2 <- mat[i2,]
+
+	r1 <- cor(v1, t(mat))
+	r2 <- cor(v2, t(mat))
+	r1[c(i1,i2)] <- NA
+	r2[c(i1,i2)] <- NA
+
+	p <- v1 + v2
+	m1 <- v1 - v2
+	m2 <- v2 - v1
+
+	rp <- cor(p, t(mat))
+	rm1 <- cor(m1, t(mat))
+	rm2 <- cor(m2, t(mat))
+
+	# Are there any traits that are more correlated with p, m1, m2 than either r1 or r2
+	tp1 <- rp - r1
+	tp2 <- rp - r2
+
+	keep_p <- sign(tp1) == sign(tp2) & abs(tp1) > thresh & abs(tp2) > thresh
+
+	if(sum(keep_p, na.rm=TRUE) > 0)
+	{
+		pout <- data.frame(trait1=n1, trait2=n2, trait=rownames(mat)[which(keep_p)], r1=r1[which(keep_p)], r2=r2[which(keep_p)], rp=rp[which(keep_p)])
+	} else {
+		pout <- NULL
+	}
+	return(pout)
+}
+
+
+algebra_cors("Age at menarche", "Body mass index", z, 0.02)
+
+l <- list()
+k <- 1
+for(i in 1:nrow(z))
+{
+	for(j in 1:i)
+	{
+		message(i, ", ", j)
+		l[[k]] <- algebra_cors(rownames(z)[i], rownames(z)[j], z, 0.02)
+		k <- k + 1
+	}
+}
